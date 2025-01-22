@@ -29,12 +29,6 @@ if 'question' not in st.session_state:
     st.session_state.question = ""
 if 'uploaded_files' not in st.session_state:
     st.session_state.uploaded_files = []
-if 'temp_dir' not in st.session_state:
-    st.session_state.temp_dir = tempfile.mkdtemp()
-    # Register cleanup on session end
-    def cleanup():
-        shutil.rmtree(st.session_state.temp_dir, ignore_errors=True)
-    atexit.register(cleanup)
 
 # Load environment variables
 load_dotenv()
