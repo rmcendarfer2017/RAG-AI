@@ -1,3 +1,5 @@
+setuptools>=68.0.0
+wheel>=0.40.0
 python-dotenv==1.0.0
 openai>=1.10.0
 streamlit==1.29.0
