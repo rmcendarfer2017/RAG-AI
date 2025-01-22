@@ -6,7 +6,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.chains import ConversationalRetrievalChain, RetrievalQA
 from langchain.chains.summarize import load_summarize_chain
-from langchain_community.vectorstores import SKLearnVectorStore
+from langchain_community.vectorstores import DocArrayInMemorySearch
 import tempfile
 import shutil
 from pathlib import Path
@@ -20,11 +20,13 @@ if not os.path.exists(DOCS_DIR):
 if 'conversation' not in st.session_state:
     st.session_state.conversation = None
 if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []  # Will store tuples of (question, answer, sources)
+    st.session_state.chat_history = []  
 if 'vector_store' not in st.session_state:
     st.session_state.vector_store = None
 if 'all_documents' not in st.session_state:
     st.session_state.all_documents = []
+if 'question' not in st.session_state:
+    st.session_state.question = ""
 if 'uploaded_files' not in st.session_state:
     st.session_state.uploaded_files = []
 if 'temp_dir' not in st.session_state:
@@ -39,7 +41,7 @@ load_dotenv()
 
 # Set OpenAI API key
 if not os.getenv('OPENAI_API_KEY'):
-    st.error("OpenAI API key not found. Please add your API key to the .env file.")
+    st.error("OpenAI API key not found. Please set it in your .env file.")
     st.stop()
 
 # Proxy Configuration
@@ -92,115 +94,6 @@ def process_document(uploaded_file):
         # Clean up the temporary file
         os.unlink(tmp_file_path)
 
-def initialize_conversation(vector_store):
-    retriever = vector_store.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 5}  # Increased to get more context
-    )
-    
-    llm = ChatOpenAI(
-        model="gpt-4-turbo-preview",
-        temperature=0
-    )
-    
-    chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=retriever,
-        return_source_documents=True,
-        verbose=True,
-        chain_type="stuff"
-    )
-    
-    return chain
-
-def initialize_qa_chain(vector_store, all_documents):
-    retriever = vector_store.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 5}  # Increased to get more context
-    )
-
-    llm = ChatOpenAI(
-        model="gpt-4-turbo-preview",
-        temperature=0
-    )
-
-    # Create summarization chain
-    summarize_chain = load_summarize_chain(llm=llm, chain_type="map_reduce")
-
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True
-    )
-
-    def format_docs(docs):
-        return "\n\n".join([d.page_content for d in docs])
-
-    def new_qa_chain(query, chat_history, all_documents):
-        formatted_docs = format_docs(all_documents)
-        if "summarize" in query.lower():
-            try:
-                summary = summarize_chain.run(all_documents)
-                return {
-                    "answer": summary,
-                    "source_documents": all_documents
-                }
-            except Exception as e:
-                st.error(f"Error in summarization: {str(e)}")
-                # Fallback to regular QA
-                pass
-        
-        # Get relevant documents using the retriever
-        relevant_docs = retriever.get_relevant_documents(query)
-        
-        # Combine chat history into context
-        chat_history_text = "\n".join([f"Q: {q}\nA: {a}" for q, a, _ in chat_history])
-        
-        # Number the documents and create a reference list
-        doc_references = []
-        for i, doc in enumerate(relevant_docs, 1):
-            metadata = doc.metadata
-            ref = f"[{i}] "
-            if 'source' in metadata:
-                source_name = metadata['source'].replace('./.temp_', '')
-                ref += f"From {source_name}"
-            if 'page' in metadata:
-                ref += f", Page {metadata['page']}"
-            ref += f": {doc.page_content[:150]}..."
-            doc_references.append(ref)
-        
-        references_text = "\n".join(doc_references)
-        
-        # Create a comprehensive prompt with instructions for precise citations
-        full_query = f"""Based on the following context and chat history, please answer the question.
-
-Important Instructions for Citations:
-1. Use numbered citations [1], [2], etc. that correspond exactly to the sources below
-2. Each citation number should match the source number in the reference list
-3. Use a citation for each specific piece of information
-4. Only use citation numbers that exist in the reference list
-5. DO NOT cite sources that are not in the reference list
-
-Previous conversation:
-{chat_history_text}
-
-Available Sources:
-{references_text}
-
-Question: {query}
-
-Please provide a detailed answer based on the context provided. Remember to cite each piece of information with the correct source number from the reference list above."""
-
-        # Use the QA chain with the enhanced prompt
-        result = qa_chain({"query": full_query})
-        
-        return {
-            "answer": result["result"],
-            "source_documents": relevant_docs
-        }
-    return new_qa_chain
-
 def save_uploaded_file(uploaded_file):
     """Save an uploaded file and return its path"""
     # Create a unique filename to avoid conflicts
@@ -225,7 +118,6 @@ def create_source_link(source_path, page=None):
         # For PDFs, create a link with page number
         if filename.lower().endswith('.pdf'):
             display_text = f"{filename} (Page {page})"
-            # Create a streamlit button that will open the file
             return f'<a href="file://{source_path}#page={page}" target="_blank">{display_text}</a>'
     else:
         display_text = filename
@@ -255,16 +147,40 @@ def format_source_documents(source_docs):
     
     return "\n".join(sources)
 
+def initialize_qa_chain(vector_store, all_documents):
+    """Initialize the QA chain with the vector store"""
+    llm = ChatOpenAI(temperature=0, model="gpt-4-turbo-preview")
+    
+    qa_chain = ConversationalRetrievalChain.from_llm(
+        llm=llm,
+        retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
+        return_source_documents=True,
+        verbose=True,
+        chain_type="stuff"
+    )
+    
+    return qa_chain
+
+def initialize_conversation(vector_store):
+    """Initialize the conversation chain"""
+    llm = ChatOpenAI(temperature=0.7, model="gpt-4-turbo-preview")
+    
+    conversation = ConversationalRetrievalChain.from_llm(
+        llm=llm,
+        retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
+        return_source_documents=True,
+        verbose=True,
+        chain_type="stuff"
+    )
+    
+    return conversation
+
 # Create two columns for layout
 left_column, right_column = st.columns([1, 4])
 
 # Right column - Chat Interface
 with right_column:
     st.header("Chat Interface")
-    
-    # Initialize the question in session state if it doesn't exist
-    if "question" not in st.session_state:
-        st.session_state.question = ""
     
     # Chat interface
     with st.form(key='question_form'):
@@ -278,9 +194,7 @@ with right_column:
             with st.spinner("Thinking..."):
                 try:
                     result = st.session_state.qa_chain(
-                        user_question,
-                        st.session_state.chat_history,
-                        st.session_state.all_documents
+                        {"question": user_question, "chat_history": st.session_state.chat_history}
                     )
 
                     # Format the answer with sources
@@ -317,7 +231,7 @@ with left_column:
     
     # File uploader
     uploaded_files = st.file_uploader(
-        "Upload your documents",
+        "Upload your documents:",
         type=["pdf", "txt"],
         accept_multiple_files=True
     )
@@ -367,7 +281,7 @@ with left_column:
                     if all_splits:
                         try:
                             # Create or update the vector store
-                            vector_store = SKLearnVectorStore.from_documents(
+                            vector_store = DocArrayInMemorySearch.from_documents(
                                 documents=all_splits,
                                 embedding=embeddings
                             )
