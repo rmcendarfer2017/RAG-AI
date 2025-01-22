@@ -9,3 +9,4 @@ langchain-community==0.0.13
 pypdf==3.17.1
 tiktoken==0.5.2
 numpy>=1.26.0
+docarray>=0.40.0
