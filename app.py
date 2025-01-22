@@ -6,7 +6,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.chains import ConversationalRetrievalChain, RetrievalQA
 from langchain.chains.summarize import load_summarize_chain
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 import tempfile
 import shutil
 from pathlib import Path
@@ -370,7 +370,7 @@ with left_column:
                     if all_splits:
                         try:
                             # Create or update the vector store
-                            vector_store = Chroma.from_documents(
+                            vector_store = FAISS.from_documents(
                                 documents=all_splits,
                                 embedding=embeddings
                             )
