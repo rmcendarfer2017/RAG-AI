@@ -6,13 +6,10 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.chains import ConversationalRetrievalChain, RetrievalQA
 from langchain.chains.summarize import load_summarize_chain
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import SKLearnVectorStore
 import tempfile
 import shutil
 from pathlib import Path
-from openai import OpenAI
-from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-import atexit
 
 # Create a documents directory in the project root
 DOCS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploaded_docs')
@@ -370,7 +367,7 @@ with left_column:
                     if all_splits:
                         try:
                             # Create or update the vector store
-                            vector_store = FAISS.from_documents(
+                            vector_store = SKLearnVectorStore.from_documents(
                                 documents=all_splits,
                                 embedding=embeddings
                             )
