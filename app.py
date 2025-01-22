@@ -3,7 +3,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredWordDocumentLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.chains import ConversationalRetrievalChain, RetrievalQA
 from langchain.chains.summarize import load_summarize_chain
 from langchain_community.vectorstores import Chroma
@@ -75,8 +75,6 @@ def process_document(uploaded_file):
             loader = PyPDFLoader(tmp_file_path)
         elif uploaded_file.name.lower().endswith('.txt'):
             loader = TextLoader(tmp_file_path)
-        elif uploaded_file.name.lower().endswith('.docx'):
-            loader = UnstructuredWordDocumentLoader(tmp_file_path)
         else:
             raise ValueError("Unsupported file format")
 
